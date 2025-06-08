@@ -1,0 +1,23 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Output
+*.out
+
+# Test results
+*.test
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+
+# OS-specific
+.DS_Store
+
+# Config file
+.gatorconfig.json
