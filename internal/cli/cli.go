@@ -7,38 +7,38 @@ import (
 	"github.com/JadedPigeon/Gator/internal/config"
 )
 
-type state struct {
-	cfg *config.Config
+type State struct {
+	Cfg *config.Config
 }
 
-type command struct {
-	name string
-	args []string
+type Command struct {
+	Name string
+	Args []string
 }
 
-type commands struct {
-	handlers map[string]func(*state, command) error
+type Commands struct {
+	Handlers map[string]func(*State, Command) error
 }
 
-func handlerLogin(s *state, cmd command) error {
-	if cmd.name == "" || len(cmd.args) == 0 {
+func HandlerLogin(s *State, cmd Command) error {
+	if cmd.Name == "" || len(cmd.Args) == 0 {
 		return errors.New("login command requires a username")
 	}
-	if err := s.cfg.SetUser(cmd.args[0]); err != nil {
+	if err := s.Cfg.SetUser(cmd.Args[0]); err != nil {
 		return fmt.Errorf("error setting user: %v", err)
 	}
-	fmt.Println("Setting current user to", s.cfg.CurrentUser)
+	fmt.Println("Setting current user to", s.Cfg.CurrentUser)
 	return nil
 }
 
-// func (c *commands) register(name string, f func(*state, command) error) {
-// 	c.handlers[name] = f
-// }
+func (c *Commands) Run(s *State, cmd Command) error {
+	handler, ok := c.Handlers[cmd.Name]
+	if !ok {
+		return fmt.Errorf("unknown command: %s", cmd.Name)
+	}
+	return handler(s, cmd)
+}
 
-// func (c *commands) run(s *state, cmd command) error {
-// 	handler, ok := c.handlers[cmd.name]
-// 	if !ok {
-// 		return fmt.Errorf("unknown command: %s", cmd.name)
-// 	}
-// 	return handler(s, cmd)
-// }
+func (c *Commands) Register(name string, f func(*State, Command) error) {
+	c.Handlers[name] = f
+}
