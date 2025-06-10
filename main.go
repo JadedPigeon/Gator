@@ -5,8 +5,13 @@ import (
 	"log"
 	"os"
 
+	"database/sql"
+
 	"github.com/JadedPigeon/Gator/internal/cli"
 	"github.com/JadedPigeon/Gator/internal/config"
+	"github.com/JadedPigeon/Gator/internal/database"
+
+	_ "github.com/lib/pq"
 )
 
 func main() {
@@ -18,11 +23,20 @@ func main() {
 	fmt.Println("Current DB URL:", cfg.DBURL)
 	fmt.Println("Current User:", cfg.CurrentUser)
 
-	// Store the config pointer in the state
-	s := &cli.State{
-		Cfg: &cfg,
+	// Open the DB connection using the config's DB URL
+	db, err := sql.Open("postgres", cfg.DBURL)
+	if err != nil {
+		log.Fatalf("failed to connect to database: %v", err)
 	}
 
+	// Initialize the SQLC-generated query wrapper
+	dbQueries := database.New(db)
+
+	// Store both the DB and config in the state
+	s := &cli.State{
+		Cfg: &cfg,
+		DB:  dbQueries,
+	}
 	// Create a new commands structure and initialize it
 	cmds := cli.Commands{
 		Handlers: make(map[string]func(*cli.State, cli.Command) error),
@@ -30,10 +44,11 @@ func main() {
 
 	// Register a handler function for the login command
 	cmds.Register("login", cli.HandlerLogin)
+	cmds.Register("register", cli.HandlerRegister)
 
 	// Use os.Args to get the command-line arguments passed in by the user
 	if len(os.Args) < 2 {
-		fmt.Errorf("no command provided, please specify a command")
+		log.Fatal("no command provided, please specify a command")
 	}
 	args := os.Args[1:]
 	cmd := args[0]
@@ -51,4 +66,14 @@ func main() {
 		log.Fatalf("error running command '%s': %v", command.Name, commandErr)
 	}
 	fmt.Println("Command executed successfully.")
+
+	// // Database setup
+	// sql.Open("postgres", cfg.DBURL)
+	// db, err := sql.Open("postgres", dbURL)
+	// dbQueries := database.New(db)
+
+	// type state struct {
+	// db  *database.Queries
+	// cfg *config.Config
+	// }
 }
