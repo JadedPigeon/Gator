@@ -9,6 +9,7 @@ import (
 
 	"github.com/JadedPigeon/Gator/internal/config"
 	"github.com/JadedPigeon/Gator/internal/database"
+	"github.com/JadedPigeon/Gator/internal/rss"
 	"github.com/google/uuid"
 )
 
@@ -74,6 +75,84 @@ func HandlerRegister(s *State, cmd Command) error {
 	fmt.Printf("User %q registered successfully!\n", user.Name)
 	return nil
 
+}
+
+func HandlerReset(s *State, cmd Command) error {
+	if len(cmd.Args) != 0 {
+		return errors.New("reset command does not take any arguments")
+	}
+	err := s.DB.DeleteAllUsers(context.Background())
+	if err != nil {
+		return fmt.Errorf("error deleting all users: %v", err)
+	}
+	fmt.Println("All users deleted successfully.")
+	if err := s.Cfg.SetUser(""); err != nil {
+		return fmt.Errorf("error resetting current user in config: %v", err)
+	}
+	fmt.Println("All users deleted")
+	return nil
+}
+
+func HandlerUsers(s *State, cmd Command) error {
+	if len(cmd.Args) != 0 {
+		return errors.New("users command does not take any arguments")
+	}
+	users, err := s.DB.GetAllUsers(context.Background())
+	if err != nil {
+		return fmt.Errorf("error retrieving users: %v", err)
+	}
+	if len(users) == 0 {
+		fmt.Println("No users found.")
+		return nil
+	}
+	fmt.Println("Users:")
+	for _, user := range users {
+		output := "* " + user.Name
+		if user.Name == s.Cfg.CurrentUser {
+			output += " (current)"
+		}
+		fmt.Println(output)
+	}
+
+	return nil
+}
+
+func HandlerAgg(s *State, cmd Command) error {
+	feedURL := "https://www.wagslane.dev/index.xml"
+	feed, err := rss.FetchFeed(context.Background(), feedURL)
+	if err != nil {
+		return fmt.Errorf("error fetching feed: %v", err)
+	}
+	fmt.Printf("%+v\n", feed)
+	return nil
+}
+
+func HandlerFeeds(s *State, cmd Command) error {
+	if len(cmd.Args) < 2 {
+		return errors.New("feeds command requires a name and URL")
+	} else if len(cmd.Args) > 2 {
+		return errors.New("feeds command takes only a name and URL")
+	}
+	name := cmd.Args[0]
+	url := cmd.Args[1]
+	user, err := s.DB.GetUser(context.Background(), s.Cfg.CurrentUser)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("current user %s does not exist", s.Cfg.CurrentUser)
+		}
+		return fmt.Errorf("error checking current user: %v", err)
+	}
+
+	feed, err := s.DB.CreateFeed(context.Background(), database.CreateFeedParams{
+		Name:   name,
+		Url:    url,
+		UserID: user.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("error creating feed: %v", err)
+	}
+	fmt.Printf("Feed added:\n- ID: %s\n- Name: %s\n- URL: %s\n", feed.ID, feed.Name, feed.Url)
+	return nil
 }
 
 func (c *Commands) Run(s *State, cmd Command) error {

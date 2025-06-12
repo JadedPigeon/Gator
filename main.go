@@ -45,6 +45,10 @@ func main() {
 	// Register a handler function for the login command
 	cmds.Register("login", cli.HandlerLogin)
 	cmds.Register("register", cli.HandlerRegister)
+	cmds.Register("reset", cli.HandlerReset)
+	cmds.Register("users", cli.HandlerUsers)
+	cmds.Register("agg", cli.HandlerAgg)
+	cmds.Register("addfeed", cli.HandlerFeeds)
 
 	// Use os.Args to get the command-line arguments passed in by the user
 	if len(os.Args) < 2 {
