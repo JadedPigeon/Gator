@@ -48,10 +48,11 @@ func main() {
 	cmds.Register("reset", cli.HandlerReset)
 	cmds.Register("users", cli.HandlerUsers)
 	cmds.Register("agg", cli.HandlerAgg)
-	cmds.Register("addfeed", cli.HandlerAddFeeds)
+	cmds.Register("addfeed", cli.MiddlewareLoggedIn(cli.HandlerAddFeeds))
 	cmds.Register("feeds", cli.HandlerFeeds)
-	cmds.Register("follow", cli.HandlerFollow)
-	cmds.Register("following", cli.HandlerFollowing)
+	cmds.Register("follow", cli.MiddlewareLoggedIn(cli.HandlerFollow))
+	cmds.Register("following", cli.MiddlewareLoggedIn(cli.HandlerFollowing))
+	cmds.Register("unfollow", cli.MiddlewareLoggedIn(cli.HandlerUnfollow))
 
 	// Use os.Args to get the command-line arguments passed in by the user
 	if len(os.Args) < 2 {

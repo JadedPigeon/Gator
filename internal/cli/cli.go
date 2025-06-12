@@ -27,6 +27,34 @@ type Commands struct {
 	Handlers map[string]func(*State, Command) error
 }
 
+func (c *Commands) Run(s *State, cmd Command) error {
+	handler, ok := c.Handlers[cmd.Name]
+	if !ok {
+		return fmt.Errorf("unknown command: %s", cmd.Name)
+	}
+	return handler(s, cmd)
+}
+
+func (c *Commands) Register(name string, f func(*State, Command) error) {
+	c.Handlers[name] = f
+}
+
+func MiddlewareLoggedIn(handler func(s *State, cmd Command, user database.User) error) func(*State, Command) error {
+	return func(s *State, cmd Command) error {
+		if s.Cfg.CurrentUser == "" {
+			return errors.New("you must be logged in to perform this action")
+		}
+		user, err := s.DB.GetUser(context.Background(), s.Cfg.CurrentUser)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return fmt.Errorf("current user %s does not exist", s.Cfg.CurrentUser)
+			}
+			return fmt.Errorf("error checking current user: %v", err)
+		}
+		return handler(s, cmd, user)
+	}
+}
+
 func HandlerLogin(s *State, cmd Command) error {
 	if cmd.Name == "" || len(cmd.Args) == 0 {
 		return errors.New("login command requires a username")
@@ -127,7 +155,7 @@ func HandlerAgg(s *State, cmd Command) error {
 	return nil
 }
 
-func HandlerAddFeeds(s *State, cmd Command) error {
+func HandlerAddFeeds(s *State, cmd Command, user database.User) error {
 	if len(cmd.Args) < 2 {
 		return errors.New("feeds command requires a name and URL")
 	} else if len(cmd.Args) > 2 {
@@ -135,13 +163,6 @@ func HandlerAddFeeds(s *State, cmd Command) error {
 	}
 	name := cmd.Args[0]
 	url := cmd.Args[1]
-	user, err := s.DB.GetUser(context.Background(), s.Cfg.CurrentUser)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return fmt.Errorf("current user %s does not exist", s.Cfg.CurrentUser)
-		}
-		return fmt.Errorf("error checking current user: %v", err)
-	}
 
 	feed, err := s.DB.CreateFeed(context.Background(), database.CreateFeedParams{
 		Name:   name,
@@ -181,7 +202,7 @@ func HandlerFeeds(s *State, cmd Command) error {
 	return nil
 }
 
-func HandlerFollow(s *State, cmd Command) error {
+func HandlerFollow(s *State, cmd Command, user database.User) error {
 	if len(cmd.Args) != 1 {
 		return errors.New("follow command requires a feed URL")
 	}
@@ -193,13 +214,7 @@ func HandlerFollow(s *State, cmd Command) error {
 		}
 		return fmt.Errorf("error checking feed: %v", err)
 	}
-	user, err := s.DB.GetUser(context.Background(), s.Cfg.CurrentUser)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return fmt.Errorf("current user %s does not exist", s.Cfg.CurrentUser)
-		}
-		return fmt.Errorf("error checking current user: %v", err)
-	}
+
 	follow, err := s.DB.CreateFeedFollow(context.Background(), database.CreateFeedFollowParams{
 		FeedID: feed.ID,
 		UserID: user.ID,
@@ -211,7 +226,7 @@ func HandlerFollow(s *State, cmd Command) error {
 	return nil
 }
 
-func HandlerFollowing(s *State, cmd Command) error {
+func HandlerFollowing(s *State, cmd Command, user database.User) error {
 	if len(cmd.Args) != 0 {
 		return errors.New("following command does not take any arguments")
 	}
@@ -238,14 +253,26 @@ func HandlerFollowing(s *State, cmd Command) error {
 	return nil
 }
 
-func (c *Commands) Run(s *State, cmd Command) error {
-	handler, ok := c.Handlers[cmd.Name]
-	if !ok {
-		return fmt.Errorf("unknown command: %s", cmd.Name)
+func HandlerUnfollow(s *State, cmd Command, user database.User) error {
+	if len(cmd.Args) != 1 {
+		return errors.New("unfollow command requires a feed URL")
 	}
-	return handler(s, cmd)
-}
+	feedURL := cmd.Args[0]
+	feed, err := s.DB.GetFeedByUrl(context.Background(), feedURL)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("feed with URL %s does not exist", feedURL)
+		}
+		return fmt.Errorf("error checking feed: %v", err)
+	}
 
-func (c *Commands) Register(name string, f func(*State, Command) error) {
-	c.Handlers[name] = f
+	err = s.DB.DeleteFeedFollow(context.Background(), database.DeleteFeedFollowParams{
+		FeedID: feed.ID,
+		UserID: user.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("error unfollowing feed: %v", err)
+	}
+	fmt.Printf("Successfully unfollowed feed %s (%s)\n", feed.Name, feed.Url)
+	return nil
 }
