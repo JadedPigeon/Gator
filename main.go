@@ -20,8 +20,8 @@ func main() {
 	if err != nil {
 		log.Fatal("error reading config:", err)
 	}
-	fmt.Println("Current DB URL:", cfg.DBURL)
-	fmt.Println("Current User:", cfg.CurrentUser)
+	// fmt.Println("Current DB URL:", cfg.DBURL)
+	// fmt.Println("Current User:", cfg.CurrentUser)
 
 	// Open the DB connection using the config's DB URL
 	db, err := sql.Open("postgres", cfg.DBURL)
@@ -48,7 +48,10 @@ func main() {
 	cmds.Register("reset", cli.HandlerReset)
 	cmds.Register("users", cli.HandlerUsers)
 	cmds.Register("agg", cli.HandlerAgg)
-	cmds.Register("addfeed", cli.HandlerFeeds)
+	cmds.Register("addfeed", cli.HandlerAddFeeds)
+	cmds.Register("feeds", cli.HandlerFeeds)
+	cmds.Register("follow", cli.HandlerFollow)
+	cmds.Register("following", cli.HandlerFollowing)
 
 	// Use os.Args to get the command-line arguments passed in by the user
 	if len(os.Args) < 2 {
