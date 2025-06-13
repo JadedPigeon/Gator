@@ -1,6 +1,6 @@
 # Gator - RSS Feed Aggregator CLI
 
-Gator is a terminal-based RSS feed aggregator built with Go and PostgreSQL. It allows users to register, follow RSS feeds, scrape new posts, and browse the latest articles—all from the command line.
+Gator (gator) is a terminal-based RSS feed aggregator built with Go and PostgreSQL. It allows users to register, follow RSS feeds, scrape new posts, and browse the latest articles—all from the command line.
 
 ## 🛠️ Requirements
 
