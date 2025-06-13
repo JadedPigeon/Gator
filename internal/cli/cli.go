@@ -5,6 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"os/signal"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/JadedPigeon/Gator/internal/config"
@@ -113,7 +117,6 @@ func HandlerReset(s *State, cmd Command) error {
 	if err != nil {
 		return fmt.Errorf("error deleting all users: %v", err)
 	}
-	fmt.Println("All users deleted successfully.")
 	if err := s.Cfg.SetUser(""); err != nil {
 		return fmt.Errorf("error resetting current user in config: %v", err)
 	}
@@ -146,13 +149,31 @@ func HandlerUsers(s *State, cmd Command) error {
 }
 
 func HandlerAgg(s *State, cmd Command) error {
-	feedURL := "https://www.wagslane.dev/index.xml"
-	feed, err := rss.FetchFeed(context.Background(), feedURL)
-	if err != nil {
-		return fmt.Errorf("error fetching feed: %v", err)
+	if len(cmd.Args) != 1 {
+		return errors.New("agg command requires a timeout duration in seconds")
 	}
-	fmt.Printf("%+v\n", feed)
-	return nil
+	time_between_reqs, err := time.ParseDuration(cmd.Args[0] + "s")
+	if err != nil {
+		return fmt.Errorf("error parsing duration: %v", err)
+	}
+	ticker := time.NewTicker(time_between_reqs)
+	defer ticker.Stop()
+
+	// Create a context that gets canceled on Ctrl+C
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			fmt.Println("\nAggregator stopped.")
+			return nil
+		case <-ticker.C:
+			if err := scrapeFeeds(s); err != nil {
+				fmt.Println("Error scraping feeds:", err)
+			}
+		}
+	}
 }
 
 func HandlerAddFeeds(s *State, cmd Command, user database.User) error {
@@ -274,5 +295,89 @@ func HandlerUnfollow(s *State, cmd Command, user database.User) error {
 		return fmt.Errorf("error unfollowing feed: %v", err)
 	}
 	fmt.Printf("Successfully unfollowed feed %s (%s)\n", feed.Name, feed.Url)
+	return nil
+}
+
+func HandlerBrowse(s *State, cmd Command, user database.User) error {
+	if len(cmd.Args) > 1 {
+		return errors.New("browse command takes at most one optional argument for limit")
+	}
+	var limit int
+	if len(cmd.Args) == 1 {
+		parsedLimit, err := strconv.Atoi(cmd.Args[0])
+		if err != nil || parsedLimit <= 0 {
+			return errors.New("limit must be a positive integer")
+		}
+		limit = parsedLimit
+	} else {
+		limit = 2 // default if not provided
+	}
+	posts, err := s.DB.GetPostsForUser(context.Background(), database.GetPostsForUserParams{
+		UserID: user.ID,
+		Limit:  int32(limit),
+	})
+	if err != nil {
+		return fmt.Errorf("error retrieving posts: %v", err)
+	}
+	if len(posts) == 0 {
+		fmt.Println("No posts found for the current user.")
+		return nil
+	}
+	for _, post := range posts {
+		fmt.Printf("- %s (%s)\n", post.Title, post.Url)
+	}
+	return nil
+}
+
+func scrapeFeeds(s *State) error {
+	// Get next feed
+	nextfeed, err := s.DB.GetNextFeedToFetch(context.Background())
+	if err != nil {
+		if err == sql.ErrNoRows {
+			fmt.Println("No feeds to fetch at this time.")
+			return nil
+		}
+		return fmt.Errorf("error retrieving next feed to fetch: %v", err)
+	}
+	err = s.DB.MarkFeedFetched(context.Background(), nextfeed.ID)
+	if err != nil {
+		return fmt.Errorf("error marking feed as fetched: %v", err)
+	}
+	feed, err := rss.FetchFeed(context.Background(), nextfeed.Url)
+	if err != nil {
+		return fmt.Errorf("error fetching feed %s: %v", nextfeed.Url, err)
+	}
+	fmt.Printf("Fetched feed: %s\n", nextfeed.Name)
+
+	layout := "Mon, 02 Jan 2006 15:04:05 MST" // common RSS time format
+
+	// Loop through each item (post) in the feed
+	for _, item := range feed.Channel.Item {
+		fmt.Printf("- %s\n", item.Title)
+
+		// Parse the pubDate string
+		publishedTime, err := time.Parse(layout, item.PubDate)
+		if err != nil {
+			// fallback or zero time is okay
+			publishedTime = time.Time{}
+		}
+
+		// Attempt to insert the post
+		_, err = s.DB.CreatePost(context.Background(), database.CreatePostParams{
+			Title:       item.Title,
+			Url:         item.Link,
+			Description: sql.NullString{String: item.Description, Valid: item.Description != ""},
+			PublishedAt: sql.NullTime{Time: publishedTime, Valid: !publishedTime.IsZero()},
+			FeedID:      nextfeed.ID,
+		})
+
+		if err != nil {
+			// Ignore duplicate URL errors (violating unique constraint)
+			if strings.Contains(err.Error(), "duplicate key") {
+				continue
+			}
+			fmt.Println("Error inserting post:", err)
+		}
+	}
 	return nil
 }
